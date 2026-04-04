@@ -3,6 +3,11 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Input;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
 using UserControl = System.Windows.Controls.UserControl;
 using Color = System.Windows.Media.Color;
 
@@ -11,6 +16,8 @@ namespace KeepAttributesHorizontal.UI
     public partial class AiAssistantControl : UserControl
     {
         private bool _isPlaceholderActive = true;
+        private static readonly HttpClient _httpClient = new HttpClient();
+        private const string GroqApiKey = "";
 
         public AiAssistantControl()
         {
@@ -37,7 +44,7 @@ namespace KeepAttributesHorizontal.UI
             }
         }
 
-        private void SendMessage_Click(object sender, RoutedEventArgs e)
+        private async void SendMessage_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(ChatInputBox.Text) || _isPlaceholderActive)
                 return;
@@ -46,27 +53,7 @@ namespace KeepAttributesHorizontal.UI
             ChatInputBox.Text = string.Empty;
 
             AddUserMessage(message);
-            SimulateAiResponse("I am an AI assistant prototype. Your request has been queued for analysis.");
-        }
-
-        private void ValidateSop_Click(object sender, MouseButtonEventArgs e)
-        {
-            AddUserMessage("@workspace Validate against SOP");
-            SimulateAiResponse("Analyzing current document against VARROC Standard Operating Procedures...");
-            
-            // Mock delay
-            System.Windows.Threading.DispatcherTimer timer = new System.Windows.Threading.DispatcherTimer();
-            timer.Interval = TimeSpan.FromSeconds(2.0);
-            timer.Tick += (s, args) =>
-            {
-                timer.Stop();
-                AddBotMessage(
-                    "? **Rule Violation Detected**:\n\n" +
-                    "- Component: _Headlamp Housing Bracket_\n" +
-                    "- Issue: Draft angle is 1.5°. Standard SOP requires a minimum of 3.0° for injection molding.\n\n" +
-                    "?? **Suggestion**: Increase the draft angle on the mating faces.", true);
-            };
-            timer.Start();
+            await GenerateAiResponseAsync(message);
         }
 
         private void AddUserMessage(string text)
@@ -102,21 +89,55 @@ namespace KeepAttributesHorizontal.UI
             ChatScroller.ScrollToBottom();
         }
 
-        private void SimulateAiResponse(string initialMessage)
+        private async Task GenerateAiResponseAsync(string userMessage)
         {
-            AddBotMessage(initialMessage, false);
-            
-            // Simulate processing time
-            System.Windows.Threading.DispatcherTimer timer = new System.Windows.Threading.DispatcherTimer();
-            timer.Interval = TimeSpan.FromSeconds(1.5);
-            timer.Tick += (s, args) =>
+            // Create a temporary "Thinking..." message
+            Border typingBorder = CreateBotMessageBorder("Thinking...", false);
+            MessagesPanel.Children.Add(typingBorder);
+            ChatScroller.ScrollToBottom();
+
+            try
             {
-                timer.Stop();
-            };
-            timer.Start();
+                var requestBody = new
+                {
+                    messages = new[]
+                    {
+                        new { role = "user", content = userMessage }
+                    },
+                    model = "qwen/qwen3-32b",
+                    temperature = 0.6,
+                    max_completion_tokens = 4096,
+                    top_p = 0.95,
+                    stream = false, // Set to false to wait for full response for simplicity
+                    reasoning_effort = "default"
+                };
+
+                string jsonContent = JsonSerializer.Serialize(requestBody);
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
+                requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GroqApiKey);
+                requestMessage.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                using var response = await _httpClient.SendAsync(requestMessage);
+                response.EnsureSuccessStatusCode();
+
+                string responseBody = await response.Content.ReadAsStringAsync();
+                using var jsonDoc = JsonDocument.Parse(responseBody);
+                string aiText = jsonDoc.RootElement
+                                       .GetProperty("choices")[0]
+                                       .GetProperty("message")
+                                       .GetProperty("content")
+                                       .GetString() ?? string.Empty;
+
+                // Replace "Thinking..." with actual reply
+                UpdateBotMessage(typingBorder, aiText);
+            }
+            catch (Exception ex)
+            {
+                UpdateBotMessage(typingBorder, $"Error: {ex.Message}");
+            }
         }
 
-        private void AddBotMessage(string text, bool isErrorOrWarning)
+        private Border CreateBotMessageBorder(string text, bool isErrorOrWarning)
         {
             var border = new Border
             {
@@ -131,22 +152,143 @@ namespace KeepAttributesHorizontal.UI
             var stack = new StackPanel();
             stack.Children.Add(new TextBlock
             {
-                Text = "VARROC AI / Bot",
+                Text = "CADY CoPilot",
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(Color.FromRgb(0, 122, 204)), // #007ACC
                 Margin = new Thickness(0, 0, 0, 5)
             });
 
-            stack.Children.Add(new TextBlock
-            {
-                Text = text,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(Color.FromRgb(229, 229, 229))
-            });
+            var messageBlock = new StackPanel();
+            PopulateMarkdown(messageBlock, text, false);
 
+            stack.Children.Add(messageBlock);
             border.Child = stack;
-            MessagesPanel.Children.Add(border);
+            return border;
+        }
+
+        private void UpdateBotMessage(Border border, string newText)
+        {
+            if (border.Child is StackPanel stack && stack.Children.Count > 1)
+            {
+                if (stack.Children[1] is StackPanel messageContainer)
+                {
+                    messageContainer.Children.Clear();
+
+                    string? thinkingText = null;
+                    string mainText = newText ?? string.Empty;
+                    int thinkStart = mainText.IndexOf("<think>");
+                    int thinkEnd = mainText.IndexOf("</think>");
+
+                    if (thinkStart >= 0 && thinkEnd > thinkStart)
+                    {
+                        thinkingText = newText.Substring(thinkStart + 7, thinkEnd - (thinkStart + 7)).Trim();
+                        mainText = newText.Substring(thinkEnd + 8).Trim();
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(thinkingText))
+                    {
+                        var expander = new Expander
+                        {
+                            Header = "Thinking...",
+                            Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),
+                            Margin = new Thickness(0, 0, 0, 10)
+                        };
+
+                        var thinkContent = new StackPanel { Margin = new Thickness(10, 5, 0, 0) };
+                        PopulateMarkdown(thinkContent, thinkingText, true);
+                        expander.Content = thinkContent;
+                        messageContainer.Children.Add(expander);
+                    }
+
+                    var mainContent = new StackPanel();
+                    PopulateMarkdown(mainContent, mainText, false);
+                    messageContainer.Children.Add(mainContent);
+                }
+            }
             ChatScroller.ScrollToBottom();
+        }
+
+        private void PopulateMarkdown(StackPanel container, string markdown, bool isDimmed)
+        {
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (var line in lines)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                var tb = new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = isDimmed ? new SolidColorBrush(Color.FromRgb(150, 150, 150)) : new SolidColorBrush(Color.FromRgb(229, 229, 229)),
+                    Margin = new Thickness(0, 0, 0, 5)
+                };
+
+                string currentLine = line.Trim();
+                if (currentLine.StartsWith("### "))
+                {
+                    tb.FontSize = 14;
+                    tb.FontWeight = FontWeights.SemiBold;
+                    currentLine = currentLine.Substring(4);
+                }
+                else if (currentLine.StartsWith("## "))
+                {
+                    tb.FontSize = 16;
+                    tb.FontWeight = FontWeights.Bold;
+                    currentLine = currentLine.Substring(3);
+                }
+                else if (currentLine.StartsWith("# "))
+                {
+                    tb.FontSize = 18;
+                    tb.FontWeight = FontWeights.Bold;
+                    currentLine = currentLine.Substring(2);
+                }
+                else if (currentLine.StartsWith("- ") || currentLine.StartsWith("* "))
+                {
+                    tb.Margin = new Thickness(15, 0, 0, 5);
+                    currentLine = "• " + currentLine.Substring(2);
+                }
+
+                ProcessInlines(tb, currentLine);
+                container.Children.Add(tb);
+            }
+        }
+
+        private void ProcessInlines(TextBlock tb, string text)
+        {
+            var parts = text.Split(new[] { "**" }, StringSplitOptions.None);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (i % 2 == 1 && i < parts.Length - 1)
+                {
+                    tb.Inlines.Add(new System.Windows.Documents.Bold(new System.Windows.Documents.Run(parts[i])));
+                }
+                else
+                {
+                    string runText = parts[i];
+                    if (i % 2 == 1 && i == parts.Length - 1)
+                        runText = "**" + runText; // unclosed bold
+
+                    tb.Inlines.Add(new System.Windows.Documents.Run(runText));
+                }
+            }
+        }
+
+        private void SimulateAiResponse(string initialMessage, string simulatedReply, int delayMilliseconds = 1000)
+        {
+            AddUserMessage(initialMessage);
+
+            // Simulate thinking response
+            var typingBorder = CreateBotMessageBorder("Thinking...", false);
+            MessagesPanel.Children.Add(typingBorder);
+            ChatScroller.ScrollToBottom();
+
+            Task.Delay(delayMilliseconds).ContinueWith(t =>
+            {
+                // After delay, replace thinking border with the actual reply
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    UpdateBotMessage(typingBorder, simulatedReply);
+                });
+            });
         }
     }
 }

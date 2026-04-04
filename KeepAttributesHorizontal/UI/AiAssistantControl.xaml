@@ -14,7 +14,7 @@
 
         <!-- Header -->
         <Border BorderBrush="#3E3E42" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,10">
-            <TextBlock Text="VARROC Copilot Chat" FontSize="18" FontWeight="SemiBold" Foreground="#E5E5E5" HorizontalAlignment="Center"/>
+            <TextBlock Text="CADY CoPilot" FontSize="18" FontWeight="SemiBold" Foreground="#E5E5E5" HorizontalAlignment="Center"/>
         </Border>
 
         <!-- Chat Area -->
@@ -22,28 +22,6 @@
             <StackPanel x:Name="MessagesPanel">
                 <!-- Welcome / Info -->
                 <TextBlock Text="I might make mistakes, so check for accuracy." Foreground="#969696" FontSize="12" HorizontalAlignment="Center" Margin="0,10,0,20"/>
-
-                <!-- Preset Action Cards -->
-                <Border Background="#2D2D2D" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="6" Margin="0,5,0,10" Padding="15" Cursor="Hand" MouseUp="ValidateSop_Click">
-                    <StackPanel>
-                        <TextBlock Text="?? Validate against SOP" FontWeight="SemiBold" Foreground="#E5E5E5" FontSize="14"/>
-                        <TextBlock Text="Check the current 3D model against VARROC design standards" Foreground="#969696" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0"/>
-                    </StackPanel>
-                </Border>
-
-                <Border Background="#2D2D2D" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="6" Margin="0,5,0,10" Padding="15" Cursor="Hand">
-                    <StackPanel>
-                        <TextBlock Text="?? Check Tolerance" FontWeight="SemiBold" Foreground="#E5E5E5" FontSize="14"/>
-                        <TextBlock Text="Identify tolerance violations and mating surface issues" Foreground="#969696" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0"/>
-                    </StackPanel>
-                </Border>
-
-                <Border Background="#2D2D2D" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="6" Margin="0,5,0,10" Padding="15" Cursor="Hand">
-                    <StackPanel>
-                        <TextBlock Text="??? Optimize Design" FontWeight="SemiBold" Foreground="#E5E5E5" FontSize="14"/>
-                        <TextBlock Text="Suggest material and structural optimizations" Foreground="#969696" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0"/>
-                    </StackPanel>
-                </Border>
             </StackPanel>
         </ScrollViewer>
 
@@ -54,27 +32,33 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             
-            <Border Background="#252526" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="6" Padding="10">
+            <Border Background="#252526" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="6" Padding="10" Grid.Row="1">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    
-                    <TextBox x:Name="ChatInputBox" Background="Transparent" Foreground="#E5E5E5" BorderThickness="0" 
+
+                    <ComboBox x:Name="ModeSelector" Background="#3E3E42" Foreground="Black" Margin="0,0,0,10" SelectedIndex="0" Grid.Row="0">
+                        <ComboBoxItem Content="Design Validation Mode" />
+                        <ComboBoxItem Content="Agent Mode" />
+                    </ComboBox>
+
+                    <TextBox x:Name="ChatInputBox" Grid.Row="1" Background="Transparent" Foreground="#E5E5E5" BorderThickness="0" 
                              AcceptsReturn="True" TextWrapping="Wrap" 
                              Text="Ask Copilot or use @workspace" 
                              GotFocus="ChatInputBox_GotFocus" LostFocus="ChatInputBox_LostFocus"
                              MinHeight="40" MaxHeight="100" VerticalScrollBarVisibility="Auto"/>
-                             
-                    <Grid Grid.Row="1" Margin="0,10,0,0">
+
+                    <Grid Grid.Row="2" Margin="0,10,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Button Content="??" Width="28" Height="28" Background="Transparent" Foreground="#969696" BorderThickness="0" ToolTip="Attach reference" Cursor="Hand"/>
-                        
+                        <Button Content="+" Width="28" Height="28" Background="Transparent" Foreground="#969696" BorderThickness="0" ToolTip="Attach reference" Cursor="Hand"/>
+
                         <Button Grid.Column="2" Content="?" Width="32" Height="28" Background="#007ACC" Foreground="White" BorderThickness="0" Click="SendMessage_Click" Cursor="Hand">
                             <Button.Resources>
                                 <Style TargetType="Border">
