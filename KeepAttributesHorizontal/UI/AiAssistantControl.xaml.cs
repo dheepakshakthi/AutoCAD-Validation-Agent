@@ -91,6 +91,23 @@ namespace KeepAttributesHorizontal.UI
 
         private async Task GenerateAiResponseAsync(string userMessage)
         {
+            // Determine if in Agent Mode via the ComboBox
+            bool isAgentMode = false;
+            Dispatcher.Invoke(() =>
+            {
+                if (ModeSelector.SelectedItem is ComboBoxItem item && item.Content.ToString() == "Agent Mode")
+                {
+                    isAgentMode = true;
+                }
+            });
+
+            // If in Agent Mode, inject AutoCAD context instructions
+            string systemPrompt = "You are CADY CoPilot, an AI assistant for AutoCAD.";
+            if (isAgentMode)
+            {
+                systemPrompt += "\nYou are in Agent Mode. You have the ability to make changes to the AutoCAD model by outputting a JSON command. Provide the explanation in text first, then output exactly one JSON code block formatted like this:\n```json\n{\n  \"Action\": \"ModifyRadius\",\n  \"ObjectId\": \"<id>\",\n  \"NewValue\": <value>\n}\n```\nCurrently, you can only suggest actions, they will be parsed by the system if you provide the JSON syntax.";
+            }
+
             // Create a temporary "Thinking..." message
             Border typingBorder = CreateBotMessageBorder("Thinking...", false);
             MessagesPanel.Children.Add(typingBorder);
@@ -100,8 +117,9 @@ namespace KeepAttributesHorizontal.UI
             {
                 var requestBody = new
                 {
-                    messages = new[]
+                    messages = new object[]
                     {
+                        new { role = "system", content = systemPrompt },
                         new { role = "user", content = userMessage }
                     },
                     model = "qwen/qwen3-32b",
@@ -128,12 +146,53 @@ namespace KeepAttributesHorizontal.UI
                                        .GetProperty("content")
                                        .GetString() ?? string.Empty;
 
+                // Execute Agent Action if in Agent Mode (Look for JSON)
+                if (isAgentMode)
+                {
+                    ExecuteAgentActionIfPresent(aiText);
+                }
+
                 // Replace "Thinking..." with actual reply
                 UpdateBotMessage(typingBorder, aiText);
             }
             catch (Exception ex)
             {
                 UpdateBotMessage(typingBorder, $"Error: {ex.Message}");
+            }
+        }
+
+        private void ExecuteAgentActionIfPresent(string aiText)
+        {
+            // Very basic parser for JSON code block in AI text
+            int jsonStart = aiText.IndexOf("```json");
+            int endBlock = aiText.IndexOf("```", jsonStart + 7);
+
+            if (jsonStart >= 0 && endBlock > jsonStart)
+            {
+                string jsonCommand = aiText.Substring(jsonStart + 7, endBlock - (jsonStart + 7)).Trim();
+                
+                try
+                {
+                    using var doc = JsonDocument.Parse(jsonCommand);
+                    if (doc.RootElement.TryGetProperty("Action", out var actionProp))
+                    {
+                        string action = actionProp.GetString();
+                        // For reality, this would invoke an AutoCAD command or call the AutoCAD API.
+                        // Here we simply acknowledge it.
+                        System.Diagnostics.Debug.WriteLine($"Agent Action Sent: {action}");
+                        
+                        // Adding feedback to user implicitly that action happened
+                        Dispatcher.Invoke(() =>
+                        {
+                            var border = CreateBotMessageBorder($"? Agent Action Executed: {action}", true);
+                            MessagesPanel.Children.Add(border);
+                        });
+                    }
+                }
+                catch (Exception)
+                {
+                    // Ignore parse errors
+                }
             }
         }
 
@@ -168,44 +227,47 @@ namespace KeepAttributesHorizontal.UI
 
         private void UpdateBotMessage(Border border, string newText)
         {
-            if (border.Child is StackPanel stack && stack.Children.Count > 1)
+            Dispatcher.Invoke(() =>
             {
-                if (stack.Children[1] is StackPanel messageContainer)
+                if (border.Child is StackPanel stack && stack.Children.Count > 1)
                 {
-                    messageContainer.Children.Clear();
-
-                    string? thinkingText = null;
-                    string mainText = newText ?? string.Empty;
-                    int thinkStart = mainText.IndexOf("<think>");
-                    int thinkEnd = mainText.IndexOf("</think>");
-
-                    if (thinkStart >= 0 && thinkEnd > thinkStart)
+                    if (stack.Children[1] is StackPanel messageContainer)
                     {
-                        thinkingText = newText.Substring(thinkStart + 7, thinkEnd - (thinkStart + 7)).Trim();
-                        mainText = newText.Substring(thinkEnd + 8).Trim();
-                    }
+                        messageContainer.Children.Clear();
 
-                    if (!string.IsNullOrWhiteSpace(thinkingText))
-                    {
-                        var expander = new Expander
+                        string? thinkingText = null;
+                        string mainText = newText ?? string.Empty;
+                        int thinkStart = mainText.IndexOf("<think>");
+                        int thinkEnd = mainText.IndexOf("</think>");
+
+                        if (thinkStart >= 0 && thinkEnd > thinkStart)
                         {
-                            Header = "Thinking...",
-                            Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),
-                            Margin = new Thickness(0, 0, 0, 10)
-                        };
+                            thinkingText = newText.Substring(thinkStart + 7, thinkEnd - (thinkStart + 7)).Trim();
+                            mainText = newText.Substring(thinkEnd + 8).Trim();
+                        }
 
-                        var thinkContent = new StackPanel { Margin = new Thickness(10, 5, 0, 0) };
-                        PopulateMarkdown(thinkContent, thinkingText, true);
-                        expander.Content = thinkContent;
-                        messageContainer.Children.Add(expander);
+                        if (!string.IsNullOrWhiteSpace(thinkingText))
+                        {
+                            var expander = new Expander
+                            {
+                                Header = "Thinking...",
+                                Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),
+                                Margin = new Thickness(0, 0, 0, 10)
+                            };
+
+                            var thinkContent = new StackPanel { Margin = new Thickness(10, 5, 0, 0) };
+                            PopulateMarkdown(thinkContent, thinkingText, true);
+                            expander.Content = thinkContent;
+                            messageContainer.Children.Add(expander);
+                        }
+
+                        var mainContent = new StackPanel();
+                        PopulateMarkdown(mainContent, mainText, false);
+                        messageContainer.Children.Add(mainContent);
                     }
-
-                    var mainContent = new StackPanel();
-                    PopulateMarkdown(mainContent, mainText, false);
-                    messageContainer.Children.Add(mainContent);
                 }
-            }
-            ChatScroller.ScrollToBottom();
+                ChatScroller.ScrollToBottom();
+            });
         }
 
         private void PopulateMarkdown(StackPanel container, string markdown, bool isDimmed)
@@ -284,7 +346,7 @@ namespace KeepAttributesHorizontal.UI
             Task.Delay(delayMilliseconds).ContinueWith(t =>
             {
                 // After delay, replace thinking border with the actual reply
-                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                Dispatcher.Invoke(() =>
                 {
                     UpdateBotMessage(typingBorder, simulatedReply);
                 });
