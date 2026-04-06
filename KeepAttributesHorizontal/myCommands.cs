@@ -44,34 +44,49 @@ namespace KeepAttributesHorizontal
         //declaring myOverRule as nullable to avoid warning CS8618: Non-nullable field 'myOverRule' must contain a non-null value when exiting constructor. Consider declaring the field as nullable.
         static KeepStraightOverrule? myOverRule;
 
-        // --- NEW VARIABLES FOR UI ---
-        static PaletteSet? myAiPaletteSet;
-        static AiAssistantControl? myAiControl;
+        // Unified workspace palette hosting assistant and guardrail modules.
+        static PaletteSet? myWorkspacePaletteSet;
+        static CadyWorkspaceControl? myWorkspaceControl;
+
+        private static void EnsureWorkspacePalette()
+        {
+            if (myWorkspacePaletteSet != null)
+            {
+                return;
+            }
+
+            myWorkspacePaletteSet = new PaletteSet("CADY Workspace")
+            {
+                Style = PaletteSetStyles.ShowPropertiesMenu |
+                        PaletteSetStyles.ShowAutoHideButton |
+                        PaletteSetStyles.ShowCloseButton,
+                MinimumSize = new System.Drawing.Size(420, 600)
+            };
+
+            myWorkspaceControl = new CadyWorkspaceControl();
+            myWorkspacePaletteSet.AddVisual("Unified Compliance Workspace", myWorkspaceControl);
+        }
 
         [CommandMethod("ShowAiAssistant")]
         public static void ShowAiAssistant()
         {
-            if (myAiPaletteSet == null)
+            EnsureWorkspacePalette();
+            myWorkspaceControl?.ShowAssistantTab();
+            if (myWorkspacePaletteSet != null)
             {
-                // Create the palette set
-                myAiPaletteSet = new PaletteSet("VARROC AI Assistant");
-
-                // Set its docking property to dockable
-                myAiPaletteSet.Style = PaletteSetStyles.ShowPropertiesMenu |
-                                       PaletteSetStyles.ShowAutoHideButton |
-                                       PaletteSetStyles.ShowCloseButton;
-                
-                myAiPaletteSet.MinimumSize = new System.Drawing.Size(300, 400);
-
-                // Create the WPF User Control
-                myAiControl = new AiAssistantControl();
-
-                // Add the WPF User Control directly using AddVisual method
-                myAiPaletteSet.AddVisual("AI Design Validation", myAiControl);
+                myWorkspacePaletteSet.Visible = true;
             }
+        }
 
-            // Display the palette set
-            myAiPaletteSet.Visible = true;
+        [CommandMethod("ShowCadyWorkspace")]
+        public static void ShowCadyWorkspace()
+        {
+            EnsureWorkspacePalette();
+            myWorkspaceControl?.ShowAssistantTab();
+            if (myWorkspacePaletteSet != null)
+            {
+                myWorkspacePaletteSet.Visible = true;
+            }
         }
 
         [CommandMethod("KeepStraight")]
@@ -95,6 +110,17 @@ namespace KeepAttributesHorizontal
             //Make sure overruling is turned on so our overrule works
             TransformOverrule.Overruling = true;
             ed.WriteMessage("\nAttributes are now parallel to x-axis\n");
+        }
+
+        [CommandMethod("ShowGuardrailPanel")]
+        public static void ShowGuardrailPanel()
+        {
+            EnsureWorkspacePalette();
+            myWorkspaceControl?.ShowGuardrailTab();
+            if (myWorkspacePaletteSet != null)
+            {
+                myWorkspacePaletteSet.Visible = true;
+            }
         }
 
     }

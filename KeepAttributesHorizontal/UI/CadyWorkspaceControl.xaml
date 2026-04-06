@@ -1,0 +1,95 @@
+<UserControl x:Class="KeepAttributesHorizontal.UI.CadyWorkspaceControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="700" d:DesignWidth="460" Background="#1E1E1E">
+    <Grid Margin="12" Background="#1E1E1E">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" BorderBrush="#3E3E42" BorderThickness="0,0,0,1" Padding="0,0,0,8" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="CADY Unified Agent Workspace" FontSize="18" FontWeight="SemiBold" Foreground="#E5E5E5" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="ContextText" Text="Project: default-project | Session: pending" FontSize="11" Foreground="#969696" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                <TextBlock x:Name="BackendStatusText" Text="Backend: checking..." FontSize="11" Foreground="#969696" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="RunStatusBanner" Grid.Row="1" Background="#2D5A2D" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock x:Name="RunStatusText" Text="Run status: idle" FontSize="13" Foreground="#E5E5E5" FontWeight="SemiBold"/>
+                <TextBlock x:Name="RunCountsText" Text="High: 0 | Medium: 0 | Low: 0" FontSize="11" Foreground="#D8D8D8" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <GroupBox Header="Agent Feed" Foreground="#E5E5E5" Margin="0,0,0,8">
+                    <ListBox x:Name="AgentFeedList" Background="#252526" Foreground="#DADADA" BorderBrush="#3E3E42" MinHeight="90"/>
+                </GroupBox>
+
+                <GroupBox Header="Guardrail Categories" Foreground="#E5E5E5" Margin="0,0,0,8">
+                    <ListBox x:Name="CategoryList" Background="#252526" Foreground="#DADADA" BorderBrush="#3E3E42" MinHeight="90"/>
+                </GroupBox>
+
+                <GroupBox Header="Violations" Foreground="#E5E5E5" Margin="0,0,0,8">
+                    <ListBox x:Name="ViolationList" Background="#252526" Foreground="#DADADA" BorderBrush="#3E3E42" MinHeight="110"/>
+                </GroupBox>
+
+                <GroupBox Header="Recommendation Cards" Foreground="#E5E5E5" Margin="0,0,0,8">
+                    <ListBox x:Name="RecommendationList" Background="#252526" Foreground="#DADADA" BorderBrush="#3E3E42" MinHeight="90"/>
+                </GroupBox>
+
+                <GroupBox Header="Issue Details" Foreground="#E5E5E5" Margin="0,0,0,8">
+                    <ListBox x:Name="IssueList" Background="#252526" Foreground="#DADADA" BorderBrush="#3E3E42" MinHeight="80"/>
+                </GroupBox>
+
+                <GroupBox Header="Reports" Foreground="#E5E5E5" Margin="0,0,0,8">
+                    <ListBox x:Name="ReportList" Background="#252526" Foreground="#DADADA" BorderBrush="#3E3E42" MinHeight="80"/>
+                </GroupBox>
+
+                <GroupBox Header="Approvals" Foreground="#E5E5E5" Margin="0,0,0,8">
+                    <ListBox x:Name="ApprovalList" Background="#252526" Foreground="#DADADA" BorderBrush="#3E3E42" MinHeight="80"/>
+                </GroupBox>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="3" Background="#252526" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,8,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="ChatInputBox"
+                         Grid.Column="0"
+                         Background="#1E1E1E"
+                         Foreground="#E5E5E5"
+                         BorderBrush="#3E3E42"
+                         BorderThickness="1"
+                         MinHeight="34"
+                         VerticalContentAlignment="Center"
+                         Text="Ask CADY anything about compliance, issues, recommendations, reports, or approvals"
+                         GotFocus="ChatInputBox_GotFocus"
+                         LostFocus="ChatInputBox_LostFocus"
+                         KeyDown="ChatInputBox_KeyDown"/>
+
+                <Button Grid.Column="1"
+                        Content="Send"
+                        Margin="8,0,0,0"
+                        Padding="12,7"
+                        Background="#007ACC"
+                        Foreground="White"
+                        BorderThickness="0"
+                        Cursor="Hand"
+                        Click="SendButton_Click"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -9,6 +9,7 @@
 	<UseWindowsForms>true</UseWindowsForms>
 	<UseWPF>true</UseWPF>
 	<ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+	<OutputPath>$(MSBuildProjectDirectory)\artifacts\build\$(Platform)\$(Configuration)\</OutputPath>
   </PropertyGroup>
 
 	<!--For launching AutoCAD in debug mode, uncomment the following lines and adjust the path if necessary.
@@ -38,4 +39,26 @@
   <ItemGroup>
     <Folder Include="Properties\" />
   </ItemGroup>
+
+  <Target Name="StageAutoCadNetloadAssets" AfterTargets="Build">
+    <PropertyGroup>
+      <AutoCadNetloadRoot>$(MSBuildProjectDirectory)\artifacts\netload\$(Platform)\$(Configuration)\</AutoCadNetloadRoot>
+      <AutoCadNetloadStamp>$([System.DateTime]::Now.ToString("yyyyMMdd-HHmmss"))</AutoCadNetloadStamp>
+      <AutoCadNetloadDir>$(AutoCadNetloadRoot)$(AutoCadNetloadStamp)\</AutoCadNetloadDir>
+      <AutoCadLatestNetloadFile>$(AutoCadNetloadRoot)latest.txt</AutoCadLatestNetloadFile>
+      <AutoCadNetloadDll>$(AutoCadNetloadDir)$(TargetFileName)</AutoCadNetloadDll>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <AutoCadNetloadFiles Include="$(TargetDir)**\*.*" Exclude="$(TargetDir)ref\**\*.*" />
+    </ItemGroup>
+
+    <MakeDir Directories="$(AutoCadNetloadRoot)" />
+    <MakeDir Directories="$(AutoCadNetloadDir)" />
+    <Copy
+      SourceFiles="@(AutoCadNetloadFiles)"
+      DestinationFiles="@(AutoCadNetloadFiles->'$(AutoCadNetloadDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+    <WriteLinesToFile File="$(AutoCadLatestNetloadFile)" Lines="$(AutoCadNetloadDll)" Overwrite="true" />
+    <Message Importance="high" Text="AutoCAD NETLOAD path: $(AutoCadNetloadDll)" />
+  </Target>
 </Project>

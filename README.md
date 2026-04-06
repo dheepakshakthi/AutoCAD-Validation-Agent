@@ -40,20 +40,36 @@ Design and develop a comprehensive software/program architecture to achieve the 
    - Verify that **Copy Local** is set to `False` for these AutoCAD reference DLLs.
 
 4. **Build the Solution**
-   - Build the solution (`Ctrl + Shift + B`). This will compile the project and generate the `.dll` file in your `bin/Debug/net8.0-windows` (or Release) folder.
+   - Build the solution (`Ctrl + Shift + B`). The project now compiles into `KeepAttributesHorizontal/artifacts/build/...` and also stages a fresh `NETLOAD` copy into `KeepAttributesHorizontal/artifacts/netload/...`.
+   - After each successful build, the latest staged plugin path is written to `KeepAttributesHorizontal/artifacts/netload/x64/Debug/latest.txt`.
+
+5. **Configure Backend Environment (Optional for Groq)**
+   - Create `backend/.env` (you can copy `backend/.env.example`).
+   - Add your Groq key:
+     - `GROQ_API_KEY=<your_key>`
+   - Optional model override:
+     - `GROQ_MODEL=qwen/qwen3-32b`
+
+6. **Run Backend Service**
+   - From the `backend` folder:
+   - `pip install -r requirements.txt`
+   - `uvicorn main:app --host 127.0.0.1 --port 8000 --reload`
+   - Check health: open `http://127.0.0.1:8000/health` and verify `groq_enabled`.
 
 ## ??? How to Use the Plugin in AutoCAD
 
 1. **Load the Plugin (`NETLOAD`)**
    - Open AutoCAD.
    - Type the command `NETLOAD` in the AutoCAD command prompt and press Enter.
-   - Navigate to the compiled `bin/Debug/net8.0-windows` directory of your VS2022 project and select the generated `.dll` file (e.g., `KeepAttributesHorizontal.dll`).
+   - Open the path recorded in `KeepAttributesHorizontal/artifacts/netload/x64/Debug/latest.txt`, then select that staged `KeepAttributesHorizontal.dll`.
+   - Using the staged `netload` copy prevents AutoCAD from locking the compiler's main output folder on the next build.
 
-2. **Launch the AI Assistant**
-   - In the AutoCAD command prompt, type `ShowAiAssistant` and press Enter.
-   - The **CADY CoPilot** dockable palette will seamlessly appear. 
-   - Type your queries in the chat window. You can toggle between **Design Validation Mode** and **Agent Mode** via the dropdown above the input box.
-   - AI analytical tracks are neatly hidden under an expandable "Thinking..." dropdown to keep the conversation clean.
+2. **Launch the Unified Workspace**
+   - In the AutoCAD command prompt, type `ShowCadyWorkspace` and press Enter.
+   - The **CADY Unified Agent Workspace** dockable palette appears as a single surface (no tabs).
+   - Validation runs automatically whenever geometry changes; no separate validate command is required.
+   - `ShowAiAssistant` and `ShowGuardrailPanel` remain valid aliases and now open the same unified workspace.
+   - Ask questions in the input box and the unified agent will refresh guardrail status, recommendations, issue details, reports, and approvals through typed tool calls.
 
 3. **Run Legacy Tools**
    - In the AutoCAD command prompt, type `KeepStraight` and press Enter.

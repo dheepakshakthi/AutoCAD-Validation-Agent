@@ -1,0 +1,87 @@
+<UserControl x:Class="KeepAttributesHorizontal.UI.GuardrailPanelControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="350" Background="#1E1E1E">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" BorderBrush="#3E3E42" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,10">
+            <StackPanel>
+                <TextBlock Text="Compliance Guardrail" FontSize="18" FontWeight="SemiBold" Foreground="#E5E5E5" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="StatusText" Text="Ready" FontSize="11" Foreground="#969696" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Overall Status Banner -->
+        <Border x:Name="OverallStatusBanner" Grid.Row="1" CornerRadius="6" Padding="12" Margin="0,0,0,15">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Background" Value="#2D5A2D"/>
+                </Style>
+            </Border.Style>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="OverallStatusIcon" Text="✓" FontSize="20" Foreground="#4EC94E" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="OverallStatusTitle" Text="All Checks Passed" FontSize="14" FontWeight="SemiBold" Foreground="#E5E5E5"/>
+                    <TextBlock x:Name="OverallStatusSubtitle" Text="0 violations found" FontSize="11" Foreground="#B0B0B0"/>
+                </StackPanel>
+                <TextBlock x:Name="ViolationCount" Grid.Column="2" Text="0" FontSize="24" FontWeight="Bold" Foreground="#4EC94E" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <!-- Category Cards -->
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="CategoriesPanel">
+                <!-- Category cards will be added programmatically -->
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Violations List (Expandable) -->
+        <Expander Grid.Row="3" Header="Violations Details" Foreground="#969696" Margin="0,10,0,10" IsExpanded="False">
+            <Border Background="#252526" CornerRadius="4" Padding="10" MaxHeight="200">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="ViolationsPanel">
+                        <TextBlock Text="No violations" Foreground="#666666" FontStyle="Italic"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Expander>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button x:Name="ValidateButton" Content="⟳ Validate Now" Padding="15,8" Margin="5,0" 
+                    Background="#007ACC" Foreground="White" BorderThickness="0" Cursor="Hand"
+                    Click="ValidateButton_Click">
+                <Button.Resources>
+                    <Style TargetType="Border">
+                        <Setter Property="CornerRadius" Value="4"/>
+                    </Style>
+                </Button.Resources>
+            </Button>
+            <Button x:Name="ToggleAutoButton" Content="Auto: OFF" Padding="15,8" Margin="5,0"
+                    Background="#3E3E42" Foreground="#E5E5E5" BorderThickness="0" Cursor="Hand"
+                    Click="ToggleAutoButton_Click">
+                <Button.Resources>
+                    <Style TargetType="Border">
+                        <Setter Property="CornerRadius" Value="4"/>
+                    </Style>
+                </Button.Resources>
+            </Button>
+        </StackPanel>
+    </Grid>
+</UserControl>
