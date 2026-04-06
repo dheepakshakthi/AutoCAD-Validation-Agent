@@ -10,6 +10,15 @@
 *.userosscache
 *.sln.docstates
 
+# Environment files
+.env
+*.env
+backend/.env
+.env.*
+!.env.example
+!backend/.env.example
+
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
@@ -314,7 +323,33 @@ paket-files/
 
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+
+# Python virtual environments
+.venv/
+venv/
+env/
+backend/.venv/
+backend/venv/
+
+# Python test, type-check, and coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging artifacts
+*.egg-info/
+.eggs/
 
 # Cake - Uncomment if you are using it
 # tools/**

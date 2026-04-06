@@ -3,11 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Input;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
+using KeepAttributesHorizontal.Validation;
 using UserControl = System.Windows.Controls.UserControl;
 using Color = System.Windows.Media.Color;
 
@@ -16,12 +13,34 @@ namespace KeepAttributesHorizontal.UI
     public partial class AiAssistantControl : UserControl
     {
         private bool _isPlaceholderActive = true;
-        private static readonly HttpClient _httpClient = new HttpClient();
-        private const string GroqApiKey = "";
+        private readonly ValidationApiClient _apiClient;
+
+        public string SessionId { get; private set; } = "session-local";
+        public string ProjectId { get; private set; } = "default-project";
+        public string DrawingId { get; private set; } = "active-drawing";
 
         public AiAssistantControl()
         {
             InitializeComponent();
+            _apiClient = new ValidationApiClient();
+        }
+
+        public void SetContext(string projectId, string sessionId, string drawingId)
+        {
+            if (!string.IsNullOrWhiteSpace(projectId))
+            {
+                ProjectId = projectId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(sessionId))
+            {
+                SessionId = sessionId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(drawingId))
+            {
+                DrawingId = drawingId;
+            }
         }
 
         private void ChatInputBox_GotFocus(object sender, RoutedEventArgs e)
@@ -91,22 +110,14 @@ namespace KeepAttributesHorizontal.UI
 
         private async Task GenerateAiResponseAsync(string userMessage)
         {
-            // Determine if in Agent Mode via the ComboBox
-            bool isAgentMode = false;
+            string selectedMode = "Design Validation Mode";
             Dispatcher.Invoke(() =>
             {
-                if (ModeSelector.SelectedItem is ComboBoxItem item && item.Content.ToString() == "Agent Mode")
+                if (ModeSelector.SelectedItem is ComboBoxItem item)
                 {
-                    isAgentMode = true;
+                    selectedMode = item.Content?.ToString() ?? "Design Validation Mode";
                 }
             });
-
-            // If in Agent Mode, inject AutoCAD context instructions
-            string systemPrompt = "You are CADY CoPilot, an AI assistant for AutoCAD.";
-            if (isAgentMode)
-            {
-                systemPrompt += "\nYou are in Agent Mode. You have the ability to make changes to the AutoCAD model by outputting a JSON command. Provide the explanation in text first, then output exactly one JSON code block formatted like this:\n```json\n{\n  \"Action\": \"ModifyRadius\",\n  \"ObjectId\": \"<id>\",\n  \"NewValue\": <value>\n}\n```\nCurrently, you can only suggest actions, they will be parsed by the system if you provide the JSON syntax.";
-            }
 
             // Create a temporary "Thinking..." message
             Border typingBorder = CreateBotMessageBorder("Thinking...", false);
@@ -115,41 +126,21 @@ namespace KeepAttributesHorizontal.UI
 
             try
             {
-                var requestBody = new
+                var response = await _apiClient.GetAgentChatResponseAsync(new AgentChatRequest
                 {
-                    messages = new object[]
-                    {
-                        new { role = "system", content = systemPrompt },
-                        new { role = "user", content = userMessage }
-                    },
-                    model = "qwen/qwen3-32b",
-                    temperature = 0.6,
-                    max_completion_tokens = 4096,
-                    top_p = 0.95,
-                    stream = false, // Set to false to wait for full response for simplicity
-                    reasoning_effort = "default"
-                };
+                    SessionId = SessionId,
+                    ProjectId = ProjectId,
+                    DrawingId = DrawingId,
+                    Mode = selectedMode,
+                    Message = userMessage
+                });
 
-                string jsonContent = JsonSerializer.Serialize(requestBody);
-                using var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
-                requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GroqApiKey);
-                requestMessage.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                string aiText = response?.Answer
+                                ?? "Backend is unavailable. Start the Python service and retry.";
 
-                using var response = await _httpClient.SendAsync(requestMessage);
-                response.EnsureSuccessStatusCode();
-
-                string responseBody = await response.Content.ReadAsStringAsync();
-                using var jsonDoc = JsonDocument.Parse(responseBody);
-                string aiText = jsonDoc.RootElement
-                                       .GetProperty("choices")[0]
-                                       .GetProperty("message")
-                                       .GetProperty("content")
-                                       .GetString() ?? string.Empty;
-
-                // Execute Agent Action if in Agent Mode (Look for JSON)
-                if (isAgentMode)
+                if (response != null && response.SuggestedTools.Count > 0)
                 {
-                    ExecuteAgentActionIfPresent(aiText);
+                    aiText += "\n\nSuggested tools:\n- " + string.Join("\n- ", response.SuggestedTools);
                 }
 
                 // Replace "Thinking..." with actual reply
@@ -158,41 +149,6 @@ namespace KeepAttributesHorizontal.UI
             catch (Exception ex)
             {
                 UpdateBotMessage(typingBorder, $"Error: {ex.Message}");
-            }
-        }
-
-        private void ExecuteAgentActionIfPresent(string aiText)
-        {
-            // Very basic parser for JSON code block in AI text
-            int jsonStart = aiText.IndexOf("```json");
-            int endBlock = aiText.IndexOf("```", jsonStart + 7);
-
-            if (jsonStart >= 0 && endBlock > jsonStart)
-            {
-                string jsonCommand = aiText.Substring(jsonStart + 7, endBlock - (jsonStart + 7)).Trim();
-                
-                try
-                {
-                    using var doc = JsonDocument.Parse(jsonCommand);
-                    if (doc.RootElement.TryGetProperty("Action", out var actionProp))
-                    {
-                        string action = actionProp.GetString();
-                        // For reality, this would invoke an AutoCAD command or call the AutoCAD API.
-                        // Here we simply acknowledge it.
-                        System.Diagnostics.Debug.WriteLine($"Agent Action Sent: {action}");
-                        
-                        // Adding feedback to user implicitly that action happened
-                        Dispatcher.Invoke(() =>
-                        {
-                            var border = CreateBotMessageBorder($"? Agent Action Executed: {action}", true);
-                            MessagesPanel.Children.Add(border);
-                        });
-                    }
-                }
-                catch (Exception)
-                {
-                    // Ignore parse errors
-                }
             }
         }
 
@@ -242,8 +198,8 @@ namespace KeepAttributesHorizontal.UI
 
                         if (thinkStart >= 0 && thinkEnd > thinkStart)
                         {
-                            thinkingText = newText.Substring(thinkStart + 7, thinkEnd - (thinkStart + 7)).Trim();
-                            mainText = newText.Substring(thinkEnd + 8).Trim();
+                            thinkingText = mainText.Substring(thinkStart + 7, thinkEnd - (thinkStart + 7)).Trim();
+                            mainText = mainText.Substring(thinkEnd + 8).Trim();
                         }
 
                         if (!string.IsNullOrWhiteSpace(thinkingText))
@@ -306,7 +262,7 @@ namespace KeepAttributesHorizontal.UI
                 else if (currentLine.StartsWith("- ") || currentLine.StartsWith("* "))
                 {
                     tb.Margin = new Thickness(15, 0, 0, 5);
-                    currentLine = "• " + currentLine.Substring(2);
+                    currentLine = "- " + currentLine.Substring(2);
                 }
 
                 ProcessInlines(tb, currentLine);
