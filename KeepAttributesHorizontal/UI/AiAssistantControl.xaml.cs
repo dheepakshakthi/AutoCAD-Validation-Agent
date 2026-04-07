@@ -3,11 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Input;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
+using KeepAttributesHorizontal.Agent;
 using UserControl = System.Windows.Controls.UserControl;
 using Color = System.Windows.Media.Color;
 
@@ -16,12 +13,12 @@ namespace KeepAttributesHorizontal.UI
     public partial class AiAssistantControl : UserControl
     {
         private bool _isPlaceholderActive = true;
-        private static readonly HttpClient _httpClient = new HttpClient();
-        private const string GroqApiKey = "";
+        private readonly OrchestrationService _orchestrationService;
 
         public AiAssistantControl()
         {
             InitializeComponent();
+            _orchestrationService = new OrchestrationService();
         }
 
         private void ChatInputBox_GotFocus(object sender, RoutedEventArgs e)
@@ -92,48 +89,25 @@ namespace KeepAttributesHorizontal.UI
         private async Task GenerateAiResponseAsync(string userMessage)
         {
             // Create a temporary "Thinking..." message
-            Border typingBorder = CreateBotMessageBorder("Thinking...", false);
+            Border typingBorder = CreateBotMessageBorder("Working on it...", false);
             MessagesPanel.Children.Add(typingBorder);
             ChatScroller.ScrollToBottom();
 
             try
             {
-                var requestBody = new
+                _orchestrationService.OnUpdateMessage = (msg, isError) =>
                 {
-                    messages = new[]
+                    this.Dispatcher.Invoke(() =>
                     {
-                        new { role = "user", content = userMessage }
-                    },
-                    model = "qwen/qwen3-32b",
-                    temperature = 0.6,
-                    max_completion_tokens = 4096,
-                    top_p = 0.95,
-                    stream = false, // Set to false to wait for full response for simplicity
-                    reasoning_effort = "default"
+                        UpdateBotMessage(typingBorder, msg);
+                    });
                 };
 
-                string jsonContent = JsonSerializer.Serialize(requestBody);
-                using var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
-                requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", GroqApiKey);
-                requestMessage.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-                using var response = await _httpClient.SendAsync(requestMessage);
-                response.EnsureSuccessStatusCode();
-
-                string responseBody = await response.Content.ReadAsStringAsync();
-                using var jsonDoc = JsonDocument.Parse(responseBody);
-                string aiText = jsonDoc.RootElement
-                                       .GetProperty("choices")[0]
-                                       .GetProperty("message")
-                                       .GetProperty("content")
-                                       .GetString() ?? string.Empty;
-
-                // Replace "Thinking..." with actual reply
-                UpdateBotMessage(typingBorder, aiText);
+                await _orchestrationService.ProcessUserMessageAsync(userMessage);
             }
             catch (Exception ex)
             {
-                UpdateBotMessage(typingBorder, $"Error: {ex.Message}");
+                UpdateBotMessage(typingBorder, $"Error: {ex.ToString()}");
             }
         }
 
@@ -181,8 +155,8 @@ namespace KeepAttributesHorizontal.UI
 
                     if (thinkStart >= 0 && thinkEnd > thinkStart)
                     {
-                        thinkingText = newText.Substring(thinkStart + 7, thinkEnd - (thinkStart + 7)).Trim();
-                        mainText = newText.Substring(thinkEnd + 8).Trim();
+                        thinkingText = mainText.Substring(thinkStart + 7, thinkEnd - (thinkStart + 7)).Trim();
+                        mainText = mainText.Substring(thinkEnd + 8).Trim();
                     }
 
                     if (!string.IsNullOrWhiteSpace(thinkingText))
@@ -244,7 +218,7 @@ namespace KeepAttributesHorizontal.UI
                 else if (currentLine.StartsWith("- ") || currentLine.StartsWith("* "))
                 {
                     tb.Margin = new Thickness(15, 0, 0, 5);
-                    currentLine = "• " + currentLine.Substring(2);
+                    currentLine = " " + currentLine.Substring(2);
                 }
 
                 ProcessInlines(tb, currentLine);
@@ -284,7 +258,7 @@ namespace KeepAttributesHorizontal.UI
             Task.Delay(delayMilliseconds).ContinueWith(t =>
             {
                 // After delay, replace thinking border with the actual reply
-                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                this.Dispatcher.Invoke(() =>
                 {
                     UpdateBotMessage(typingBorder, simulatedReply);
                 });

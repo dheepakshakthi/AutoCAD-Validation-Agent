@@ -1,0 +1,1 @@
+dotnet build .\KeepAttributesHorizontal.sln -c Debug -p:Platform=x64
