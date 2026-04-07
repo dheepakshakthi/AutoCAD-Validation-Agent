@@ -47,6 +47,38 @@ class GeometryPayload(BaseModel):
     entities: list[Entity]
 
 
+class ValidationConstraints(BaseModel):
+    """Project-specific validation thresholds and rule toggles."""
+
+    min_circle_radius: float = 5.0
+    max_circle_radius: float = 500.0
+    max_line_length: float = 1000.0
+    min_text_height: float = 2.5
+    min_arc_angle_degrees: float = 5.0
+    disallowed_layers: list[str] = Field(default_factory=lambda: ["0"])
+    notes: Optional[str] = None
+
+
+class ProjectConstraintsConfigRequest(BaseModel):
+    """Request to configure constraints for a project + drawing scope."""
+
+    project_id: str = "default-project"
+    drawing_id: str = "active-drawing"
+    profile_name: str = "default-profile"
+    constraints: ValidationConstraints
+
+
+class ProjectConstraintsResponse(BaseModel):
+    """Resolved constraint profile for a project + drawing scope."""
+
+    project_id: str
+    drawing_id: str
+    profile_name: str
+    source: str  # default or custom
+    constraints: ValidationConstraints
+    configured_at: datetime
+
+
 class ValidationRequest(BaseModel):
     """Canonical request contract for `run_validation`."""
 
@@ -90,6 +122,8 @@ class GuardrailStatusDTO(BaseModel):
     category_state: list[ValidationCategory]
     severity_counts: dict[str, int]
     degraded_reason_codes: list[str]
+    constraint_profile_name: Optional[str] = None
+    applied_constraints: Optional[ValidationConstraints] = None
     updated_at: datetime
 
 
@@ -102,6 +136,8 @@ class ValidationResponse(BaseModel):
     violations: list[Violation]
     rule_pack_version: str
     worker_build_hash: str
+    constraint_profile_name: str
+    applied_constraints: ValidationConstraints
     severity_counts: dict[str, int]
     degraded_reason_codes: list[str] = Field(default_factory=list)
 
@@ -116,6 +152,8 @@ class ValidationRunRecord(BaseModel):
     geometry_version_id: str
     rule_pack_version: str
     worker_build_hash: str
+    constraint_profile_name: str
+    applied_constraints: ValidationConstraints
     correlation_id: str
     status: str  # running, completed, degraded, superseded
     requested_at: datetime

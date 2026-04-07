@@ -1,12 +1,18 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using Autodesk.AutoCAD.ApplicationServices;
 using KeepAttributesHorizontal.Validation;
 using Color = System.Windows.Media.Color;
+using AcadApp = Autodesk.AutoCAD.ApplicationServices.Application;
+using ApiValidationConstraints = KeepAttributesHorizontal.Validation.ValidationConstraints;
 
 namespace KeepAttributesHorizontal.UI
 {
@@ -29,6 +35,7 @@ namespace KeepAttributesHorizontal.UI
         private bool _initialized;
         private bool _placeholderActive = true;
         private bool _validationInFlight;
+        private string _activeConstraintScope = string.Empty;
 
         public CadyWorkspaceControl()
         {
@@ -72,6 +79,7 @@ namespace KeepAttributesHorizontal.UI
             {
                 _initialized = true;
                 _geometryListener.GeometryChanged += OnGeometryChanged;
+                AcadApp.DocumentManager.DocumentActivated += OnDocumentActivated;
 
                 UpdateContextText();
                 AppendFeed("Workspace loaded. Initializing unified tool orchestration.");
@@ -87,6 +95,28 @@ namespace KeepAttributesHorizontal.UI
         private void OnWorkspaceUnloaded(object sender, RoutedEventArgs e)
         {
             Dispose();
+        }
+
+        private async void OnDocumentActivated(object? sender, DocumentCollectionEventArgs e)
+        {
+            if (!_initialized)
+            {
+                return;
+            }
+
+            try
+            {
+                _activeConstraintScope = string.Empty;
+                UpdateContextText();
+                AppendFeed($"Active drawing changed to {Path.GetFileName(DrawingId)}.");
+
+                await EnsureConstraintProfileAsync();
+                await RefreshUnifiedAgentAsync("Drawing activated");
+            }
+            catch (Exception ex)
+            {
+                AppendFeed($"Drawing activation handling failed: {ex.Message}");
+            }
         }
 
         private string SessionId => _geometryListener.SessionId;
@@ -112,6 +142,8 @@ namespace KeepAttributesHorizontal.UI
                 ProjectId = DefaultProjectId,
                 PreferredMode = "poll"
             });
+
+            await EnsureConstraintProfileAsync();
 
             _geometryListener.StartListening();
             AppendFeed("Automatic validation enabled. Listening to geometry changes.");
@@ -147,6 +179,8 @@ namespace KeepAttributesHorizontal.UI
             _validationInFlight = true;
             try
             {
+                await EnsureConstraintProfileAsync();
+
                 var request = ValidationRequest.FromPayload(
                     payload,
                     DefaultProjectId,
@@ -160,13 +194,187 @@ namespace KeepAttributesHorizontal.UI
                     return;
                 }
 
-                AppendFeed($"run_validation completed for {response.RunId} ({reason}).");
+                AppendFeed(
+                    $"run_validation completed for {response.RunId} ({reason}) using profile '{response.ConstraintProfileName}'.");
                 await RefreshUnifiedAgentAsync($"Auto refresh from {reason}");
             }
             finally
             {
                 _validationInFlight = false;
             }
+        }
+
+        private async Task EnsureConstraintProfileAsync()
+        {
+            string scope = $"{DefaultProjectId}|{DrawingId}";
+            if (string.Equals(_activeConstraintScope, scope, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var resolved = await _apiClient.GetProjectConstraintsAsync(DefaultProjectId, DrawingId);
+            if (resolved == null)
+            {
+                AppendFeed("Unable to resolve project constraints. Backend defaults will be used.");
+                _activeConstraintScope = scope;
+                return;
+            }
+
+            if (string.Equals(resolved.Source, "custom", StringComparison.OrdinalIgnoreCase))
+            {
+                _activeConstraintScope = scope;
+                AppendFeed(
+                    $"Loaded constraint profile '{resolved.ProfileName}' for drawing {Path.GetFileName(DrawingId)}.");
+                return;
+            }
+
+            AppendFeed($"No custom constraints found for {Path.GetFileName(DrawingId)}. Prompting for setup.");
+
+            var configured = await PromptAndConfigureConstraintsAsync(resolved);
+            if (configured != null)
+            {
+                AppendFeed(
+                    $"Configured profile '{configured.ProfileName}' for {Path.GetFileName(configured.DrawingId)}.");
+            }
+            else
+            {
+                AppendFeed("Constraint configuration skipped. Continuing with backend defaults for this drawing.");
+            }
+
+            _activeConstraintScope = scope;
+        }
+
+        private async Task<ProjectConstraintsResponse?> PromptAndConfigureConstraintsAsync(ProjectConstraintsResponse seed)
+        {
+            MessageBoxResult choice = await Dispatcher.InvokeAsync(() => System.Windows.MessageBox.Show(
+                "No custom validation constraints were found for this drawing.\n\n"
+                + "Yes: configure custom constraints now.\n"
+                + "No: accept current defaults for this drawing.",
+                "CADY Constraint Setup",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question));
+
+            if (choice == MessageBoxResult.Cancel)
+            {
+                return null;
+            }
+
+            string drawingName = Path.GetFileNameWithoutExtension(DrawingId);
+            string profileName = $"{drawingName}-profile";
+            var selectedConstraints = CloneConstraints(seed.Constraints);
+
+            if (choice == MessageBoxResult.Yes)
+            {
+                profileName = PromptText(
+                    "Constraint profile name",
+                    "CADY Constraint Setup",
+                    profileName);
+
+                selectedConstraints.MinCircleRadius = PromptDouble(
+                    "Minimum circle radius (mm)",
+                    "CADY Constraint Setup",
+                    seed.Constraints.MinCircleRadius);
+
+                selectedConstraints.MaxCircleRadius = PromptDouble(
+                    "Maximum circle radius (mm)",
+                    "CADY Constraint Setup",
+                    seed.Constraints.MaxCircleRadius);
+
+                selectedConstraints.MaxLineLength = PromptDouble(
+                    "Maximum line length (mm)",
+                    "CADY Constraint Setup",
+                    seed.Constraints.MaxLineLength);
+
+                selectedConstraints.MinTextHeight = PromptDouble(
+                    "Minimum text height (mm)",
+                    "CADY Constraint Setup",
+                    seed.Constraints.MinTextHeight);
+
+                selectedConstraints.MinArcAngleDegrees = PromptDouble(
+                    "Minimum arc angle (degrees)",
+                    "CADY Constraint Setup",
+                    seed.Constraints.MinArcAngleDegrees);
+
+                selectedConstraints.DisallowedLayers = PromptLayerList(
+                    "Disallowed layers (comma-separated)",
+                    "CADY Constraint Setup",
+                    seed.Constraints.DisallowedLayers);
+
+                selectedConstraints.Notes = PromptText(
+                    "Optional notes",
+                    "CADY Constraint Setup",
+                    seed.Constraints.Notes ?? "");
+            }
+            else
+            {
+                profileName = $"{drawingName}-defaults";
+                selectedConstraints.Notes = string.IsNullOrWhiteSpace(seed.Constraints.Notes)
+                    ? "Defaults accepted from workspace prompt."
+                    : seed.Constraints.Notes;
+            }
+
+            return await _apiClient.ConfigureProjectConstraintsAsync(new ProjectConstraintsConfigRequest
+            {
+                ProjectId = DefaultProjectId,
+                DrawingId = DrawingId,
+                ProfileName = profileName,
+                Constraints = selectedConstraints,
+            });
+        }
+
+        private static ApiValidationConstraints CloneConstraints(ApiValidationConstraints source)
+        {
+            return new ApiValidationConstraints
+            {
+                MinCircleRadius = source.MinCircleRadius,
+                MaxCircleRadius = source.MaxCircleRadius,
+                MaxLineLength = source.MaxLineLength,
+                MinTextHeight = source.MinTextHeight,
+                MinArcAngleDegrees = source.MinArcAngleDegrees,
+                DisallowedLayers = source.DisallowedLayers?.ToList() ?? new List<string> { "0" },
+                Notes = source.Notes,
+            };
+        }
+
+        private static string PromptText(string prompt, string title, string defaultValue)
+        {
+            string input = Microsoft.VisualBasic.Interaction.InputBox(prompt, title, defaultValue);
+            return string.IsNullOrWhiteSpace(input) ? defaultValue : input.Trim();
+        }
+
+        private static double PromptDouble(string prompt, string title, double defaultValue)
+        {
+            string input = Microsoft.VisualBasic.Interaction.InputBox(
+                prompt,
+                title,
+                defaultValue.ToString(CultureInfo.InvariantCulture));
+
+            if (double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) && parsed >= 0)
+            {
+                return parsed;
+            }
+
+            return defaultValue;
+        }
+
+        private static List<string> PromptLayerList(string prompt, string title, List<string> defaultLayers)
+        {
+            string defaultValue = defaultLayers == null || defaultLayers.Count == 0
+                ? "0"
+                : string.Join(", ", defaultLayers);
+
+            string input = Microsoft.VisualBasic.Interaction.InputBox(prompt, title, defaultValue);
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return defaultLayers?.ToList() ?? new List<string> { "0" };
+            }
+
+            var values = input
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return values.Count > 0 ? values : new List<string> { "0" };
         }
 
         private async Task RefreshUnifiedAgentAsync(string message)
@@ -417,6 +625,7 @@ namespace KeepAttributesHorizontal.UI
 
         public void Dispose()
         {
+            AcadApp.DocumentManager.DocumentActivated -= OnDocumentActivated;
             _geometryListener.GeometryChanged -= OnGeometryChanged;
             _geometryListener.Dispose();
         }

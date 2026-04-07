@@ -5,7 +5,7 @@ MVP: Rules are defined in code. Future: Load from JSON/database.
 
 import uuid
 from typing import Callable
-from models import Entity, Violation, RuleDefinition, RuleListResponse
+from models import Entity, Violation, RuleDefinition, RuleListResponse, ValidationConstraints
 
 
 class Rule:
@@ -20,7 +20,7 @@ class Rule:
         description: str,
         entity_types: list[str],
         condition: dict,
-        evaluate_fn: Callable[[Entity], tuple[bool, str]],
+        evaluate_fn: Callable[[Entity, ValidationConstraints], tuple[bool, str]],
     ):
         self.id = id
         self.name = name
@@ -35,12 +35,12 @@ class Rule:
         """Check if this rule applies to the given entity type"""
         return entity.type in self.entity_types or "*" in self.entity_types
     
-    def evaluate(self, entity: Entity) -> tuple[bool, str]:
+    def evaluate(self, entity: Entity, constraints: ValidationConstraints) -> tuple[bool, str]:
         """
         Evaluate the rule against an entity.
         Returns (passed, message).
         """
-        return self.evaluate_fn(entity)
+        return self.evaluate_fn(entity, constraints)
     
     def to_definition(self) -> RuleDefinition:
         return RuleDefinition(
@@ -73,9 +73,9 @@ class RuleEngine:
             description="Circle radius must be at least 5mm for manufacturability",
             entity_types=["Circle"],
             condition={"property": "radius", "operator": ">=", "value": 5.0},
-            evaluate_fn=lambda e: (
-                (e.properties.radius or 0) >= 5.0,
-                f"Circle radius {e.properties.radius}mm is below minimum 5mm"
+            evaluate_fn=lambda e, c: (
+                (e.properties.radius or 0) >= c.min_circle_radius,
+                f"Circle radius {e.properties.radius}mm is below minimum {c.min_circle_radius}mm"
             ),
         ))
         
@@ -87,9 +87,9 @@ class RuleEngine:
             description="Circle radius should not exceed 500mm",
             entity_types=["Circle"],
             condition={"property": "radius", "operator": "<=", "value": 500.0},
-            evaluate_fn=lambda e: (
-                (e.properties.radius or 0) <= 500.0,
-                f"Circle radius {e.properties.radius}mm exceeds maximum 500mm"
+            evaluate_fn=lambda e, c: (
+                (e.properties.radius or 0) <= c.max_circle_radius,
+                f"Circle radius {e.properties.radius}mm exceeds maximum {c.max_circle_radius}mm"
             ),
         ))
         
@@ -101,9 +101,9 @@ class RuleEngine:
             description="Line length should not exceed 1000mm",
             entity_types=["Line"],
             condition={"property": "length", "operator": "<=", "value": 1000.0},
-            evaluate_fn=lambda e: (
-                (e.properties.length or 0) <= 1000.0,
-                f"Line length {e.properties.length}mm exceeds maximum 1000mm"
+            evaluate_fn=lambda e, c: (
+                (e.properties.length or 0) <= c.max_line_length,
+                f"Line length {e.properties.length}mm exceeds maximum {c.max_line_length}mm"
             ),
         ))
         
@@ -116,9 +116,9 @@ class RuleEngine:
             description="Objects must be on recognized layers (not layer 0 for production)",
             entity_types=["*"],
             condition={"property": "layer", "operator": "not_in", "value": ["0"]},
-            evaluate_fn=lambda e: (
-                e.layer != "0",
-                f"Entity on default layer '0' - assign to proper layer"
+            evaluate_fn=lambda e, c: (
+                e.layer not in c.disallowed_layers,
+                f"Entity on disallowed layer '{e.layer}' - blocked layers: {', '.join(c.disallowed_layers) or 'none'}"
             ),
         ))
         
@@ -131,9 +131,9 @@ class RuleEngine:
             description="Text height must be at least 2.5mm for readability",
             entity_types=["Text", "MText"],
             condition={"property": "text_height", "operator": ">=", "value": 2.5},
-            evaluate_fn=lambda e: (
-                (e.properties.text_height or 0) >= 2.5,
-                f"Text height {e.properties.text_height}mm is below minimum 2.5mm"
+            evaluate_fn=lambda e, c: (
+                (e.properties.text_height or 0) >= c.min_text_height,
+                f"Text height {e.properties.text_height}mm is below minimum {c.min_text_height}mm"
             ),
         ))
         
@@ -146,16 +146,19 @@ class RuleEngine:
             description="Arc angles should be meaningful (> 5 degrees)",
             entity_types=["Arc"],
             condition={"property": "arc_angle", "operator": ">=", "value": 5.0},
-            evaluate_fn=lambda e: self._check_arc_angle(e),
+            evaluate_fn=lambda e, c: self._check_arc_angle(e, c),
         ))
     
-    def _check_arc_angle(self, entity: Entity) -> tuple[bool, str]:
+    def _check_arc_angle(self, entity: Entity, constraints: ValidationConstraints) -> tuple[bool, str]:
         """Check if arc has meaningful angle"""
         start = entity.properties.start_angle or 0
         end = entity.properties.end_angle or 0
         angle = abs(end - start)
-        if angle < 5.0:
-            return False, f"Arc angle {angle}° is too small (minimum 5°)"
+        if angle < constraints.min_arc_angle_degrees:
+            return False, (
+                f"Arc angle {angle}° is too small "
+                f"(minimum {constraints.min_arc_angle_degrees}°)"
+            )
         return True, ""
     
     def get_categories(self) -> list[str]:
@@ -170,11 +173,16 @@ class RuleEngine:
             total_count=len(self.rules),
         )
     
-    def validate(self, entities: list[Entity]) -> list[Violation]:
+    def validate(
+        self,
+        entities: list[Entity],
+        constraints: ValidationConstraints | None = None,
+    ) -> list[Violation]:
         """
         Validate all entities against all applicable rules.
         Returns list of violations.
         """
+        effective_constraints = constraints or ValidationConstraints()
         violations: list[Violation] = []
         
         for entity in entities:
@@ -182,7 +190,7 @@ class RuleEngine:
                 if not rule.applies_to(entity):
                     continue
                 
-                passed, message = rule.evaluate(entity)
+                passed, message = rule.evaluate(entity, effective_constraints)
                 if not passed:
                     violations.append(Violation(
                         id=f"v_{uuid.uuid4().hex[:8]}",

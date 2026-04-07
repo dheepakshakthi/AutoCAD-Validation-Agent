@@ -67,6 +67,8 @@ Design and develop a comprehensive software/program architecture to achieve the 
 2. **Launch the Unified Workspace**
    - In the AutoCAD command prompt, type `ShowCadyWorkspace` and press Enter.
    - The **CADY Unified Agent Workspace** dockable palette appears as a single surface (no tabs).
+   - When a drawing is opened for the first time, CADY prompts for project-specific validation constraints.
+   - You can choose custom thresholds (radius, line length, text height, arc angle, blocked layers) or accept defaults.
    - Validation runs automatically whenever geometry changes; no separate validate command is required.
    - `ShowAiAssistant` and `ShowGuardrailPanel` remain valid aliases and now open the same unified workspace.
    - Ask questions in the input box and the unified agent will refresh guardrail status, recommendations, issue details, reports, and approvals through typed tool calls.

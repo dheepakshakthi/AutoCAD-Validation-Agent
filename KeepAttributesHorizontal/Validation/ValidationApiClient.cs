@@ -75,6 +75,26 @@ namespace KeepAttributesHorizontal.Validation
         }
 
         /// <summary>
+        /// Resolve the active validation constraint profile for a project + drawing.
+        /// </summary>
+        public async Task<ProjectConstraintsResponse?> GetProjectConstraintsAsync(string projectId, string drawingId)
+        {
+            string route =
+                $"/tools/get_project_constraints?project_id={Uri.EscapeDataString(projectId)}&drawing_id={Uri.EscapeDataString(drawingId)}";
+            return await GetJsonAsync<ProjectConstraintsResponse>(route);
+        }
+
+        /// <summary>
+        /// Configure or update validation constraints for a project + drawing.
+        /// </summary>
+        public async Task<ProjectConstraintsResponse?> ConfigureProjectConstraintsAsync(ProjectConstraintsConfigRequest request)
+        {
+            return await PostJsonAsync<ProjectConstraintsConfigRequest, ProjectConstraintsResponse>(
+                "/tools/configure_project_constraints",
+                request);
+        }
+
+        /// <summary>
         /// Retrieve a validation run by run id.
         /// </summary>
         public async Task<ValidationRunRecord?> GetValidationRunAsync(string runId)
@@ -279,6 +299,66 @@ namespace KeepAttributesHorizontal.Validation
         }
     }
 
+    public class ValidationConstraints
+    {
+        [JsonPropertyName("min_circle_radius")]
+        public double MinCircleRadius { get; set; } = 5.0;
+
+        [JsonPropertyName("max_circle_radius")]
+        public double MaxCircleRadius { get; set; } = 500.0;
+
+        [JsonPropertyName("max_line_length")]
+        public double MaxLineLength { get; set; } = 1000.0;
+
+        [JsonPropertyName("min_text_height")]
+        public double MinTextHeight { get; set; } = 2.5;
+
+        [JsonPropertyName("min_arc_angle_degrees")]
+        public double MinArcAngleDegrees { get; set; } = 5.0;
+
+        [JsonPropertyName("disallowed_layers")]
+        public List<string> DisallowedLayers { get; set; } = new() { "0" };
+
+        [JsonPropertyName("notes")]
+        public string? Notes { get; set; }
+    }
+
+    public class ProjectConstraintsConfigRequest
+    {
+        [JsonPropertyName("project_id")]
+        public string ProjectId { get; set; } = "default-project";
+
+        [JsonPropertyName("drawing_id")]
+        public string DrawingId { get; set; } = "active-drawing";
+
+        [JsonPropertyName("profile_name")]
+        public string ProfileName { get; set; } = "default-profile";
+
+        [JsonPropertyName("constraints")]
+        public ValidationConstraints Constraints { get; set; } = new();
+    }
+
+    public class ProjectConstraintsResponse
+    {
+        [JsonPropertyName("project_id")]
+        public string ProjectId { get; set; } = "";
+
+        [JsonPropertyName("drawing_id")]
+        public string DrawingId { get; set; } = "";
+
+        [JsonPropertyName("profile_name")]
+        public string ProfileName { get; set; } = "";
+
+        [JsonPropertyName("source")]
+        public string Source { get; set; } = "default";
+
+        [JsonPropertyName("constraints")]
+        public ValidationConstraints Constraints { get; set; } = new();
+
+        [JsonPropertyName("configured_at")]
+        public DateTime ConfiguredAt { get; set; }
+    }
+
     public class Violation
     {
         [JsonPropertyName("id")]
@@ -332,6 +412,12 @@ namespace KeepAttributesHorizontal.Validation
         [JsonPropertyName("worker_build_hash")]
         public string WorkerBuildHash { get; set; } = "";
 
+        [JsonPropertyName("constraint_profile_name")]
+        public string ConstraintProfileName { get; set; } = "";
+
+        [JsonPropertyName("applied_constraints")]
+        public ValidationConstraints AppliedConstraints { get; set; } = new();
+
         [JsonPropertyName("severity_counts")]
         public Dictionary<string, int> SeverityCounts { get; set; } = new();
 
@@ -362,6 +448,12 @@ namespace KeepAttributesHorizontal.Validation
         [JsonPropertyName("degraded_reason_codes")]
         public List<string> DegradedReasonCodes { get; set; } = new();
 
+        [JsonPropertyName("constraint_profile_name")]
+        public string? ConstraintProfileName { get; set; }
+
+        [JsonPropertyName("applied_constraints")]
+        public ValidationConstraints? AppliedConstraints { get; set; }
+
         [JsonPropertyName("updated_at")]
         public DateTime UpdatedAt { get; set; }
     }
@@ -388,6 +480,12 @@ namespace KeepAttributesHorizontal.Validation
 
         [JsonPropertyName("worker_build_hash")]
         public string WorkerBuildHash { get; set; } = "";
+
+        [JsonPropertyName("constraint_profile_name")]
+        public string ConstraintProfileName { get; set; } = "";
+
+        [JsonPropertyName("applied_constraints")]
+        public ValidationConstraints AppliedConstraints { get; set; } = new();
 
         [JsonPropertyName("correlation_id")]
         public string CorrelationId { get; set; } = "";
