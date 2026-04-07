@@ -29,11 +29,14 @@ from models import (
     RecommendationBundle,
     RecommendationOption,
     ReportRecord,
+    ProjectConstraintsConfigRequest,
+    ProjectConstraintsResponse,
     RuleListResponse,
     TransitionIssueStateRequest,
     UnifiedAgentQueryRequest,
     UnifiedAgentResponse,
     ValidationCategory,
+    ValidationConstraints,
     ValidationRequest,
     ValidationResponse,
     ValidationRunRecord,
@@ -73,6 +76,8 @@ report_index_by_session: dict[tuple[str, str], list[str]] = {}
 
 approvals: dict[str, ApprovalItem] = {}
 approval_index_by_session: dict[tuple[str, str], list[str]] = {}
+
+constraint_profiles: dict[tuple[str, str], ProjectConstraintsResponse] = {}
 
 WORKER_BUILD_HASH = "worker-local-dev"
 DEFAULT_POLL_INTERVAL_SECONDS = 2
@@ -120,6 +125,56 @@ def _aggregate_severity_counts(categories: list[ValidationCategory]) -> dict[str
 
 def _session_key(project_id: str, session_id: str) -> tuple[str, str]:
     return (project_id, session_id)
+
+
+def _constraint_scope_key(project_id: str, drawing_id: str) -> tuple[str, str]:
+    normalized = drawing_id.strip() if drawing_id else ""
+    if not normalized:
+        normalized = "active-drawing"
+    return (project_id, normalized)
+
+
+def _default_constraint_profile(project_id: str, drawing_id: str) -> ProjectConstraintsResponse:
+    return ProjectConstraintsResponse(
+        project_id=project_id,
+        drawing_id=drawing_id,
+        profile_name="default-profile",
+        source="default",
+        constraints=ValidationConstraints(),
+        configured_at=_utc_now(),
+    )
+
+
+def _resolve_constraint_profile(project_id: str, drawing_id: str) -> ProjectConstraintsResponse:
+    key = _constraint_scope_key(project_id, drawing_id)
+    with store_lock:
+        existing = constraint_profiles.get(key)
+
+    if existing:
+        return existing
+
+    return _default_constraint_profile(project_id=key[0], drawing_id=key[1])
+
+
+def _upsert_constraint_profile(request: ProjectConstraintsConfigRequest) -> ProjectConstraintsResponse:
+    key = _constraint_scope_key(request.project_id, request.drawing_id)
+    profile_name = request.profile_name.strip() if request.profile_name else ""
+    if not profile_name:
+        profile_name = "custom-profile"
+
+    profile = ProjectConstraintsResponse(
+        project_id=key[0],
+        drawing_id=key[1],
+        profile_name=profile_name,
+        source="custom",
+        constraints=request.constraints,
+        configured_at=_utc_now(),
+    )
+
+    with store_lock:
+        constraint_profiles[key] = profile
+
+    return profile
 
 
 def _append_unique(index: dict[tuple[str, str], list[str]], key: tuple[str, str], value: str) -> None:
@@ -293,6 +348,8 @@ def _build_validation_response(run: ValidationRunRecord) -> ValidationResponse:
         violations=run.violations,
         rule_pack_version=run.rule_pack_version,
         worker_build_hash=run.worker_build_hash,
+        constraint_profile_name=run.constraint_profile_name,
+        applied_constraints=run.applied_constraints,
         severity_counts=run.severity_counts,
         degraded_reason_codes=run.degraded_reason_codes,
     )
@@ -318,6 +375,8 @@ def _build_guardrail_status(project_id: str, session_id: str) -> GuardrailStatus
             category_state=unknown_categories,
             severity_counts=_empty_severity_counts(),
             degraded_reason_codes=[],
+            constraint_profile_name=None,
+            applied_constraints=None,
             updated_at=_utc_now(),
         )
 
@@ -329,6 +388,8 @@ def _build_guardrail_status(project_id: str, session_id: str) -> GuardrailStatus
         category_state=run.categories,
         severity_counts=run.severity_counts,
         degraded_reason_codes=run.degraded_reason_codes,
+        constraint_profile_name=run.constraint_profile_name,
+        applied_constraints=run.applied_constraints,
         updated_at=run.ended_at or run.started_at,
     )
 
@@ -336,6 +397,7 @@ def _build_guardrail_status(project_id: str, session_id: str) -> GuardrailStatus
 def _execute_validation(request: ValidationRequest) -> ValidationRunRecord:
     started_at = _utc_now()
     session_key = (request.project_id, request.session_id)
+    constraint_profile = _resolve_constraint_profile(request.project_id, request.drawing_id)
 
     run_record = ValidationRunRecord(
         run_id=request.run_id,
@@ -345,6 +407,8 @@ def _execute_validation(request: ValidationRequest) -> ValidationRunRecord:
         geometry_version_id=request.geometry_version_id,
         rule_pack_version=request.rule_pack_version,
         worker_build_hash=WORKER_BUILD_HASH,
+        constraint_profile_name=constraint_profile.profile_name,
+        applied_constraints=constraint_profile.constraints,
         correlation_id=request.correlation_id,
         status="running",
         requested_at=request.requested_at,
@@ -371,7 +435,7 @@ def _execute_validation(request: ValidationRequest) -> ValidationRunRecord:
     degraded_reason_codes: list[str] = []
 
     try:
-        violations = rule_engine.validate(request.entities)
+        violations = rule_engine.validate(request.entities, constraint_profile.constraints)
         categories = _compute_category_state(violations)
     except Exception:
         violations = []
@@ -494,6 +558,16 @@ async def health_check():
 @app.get("/rules", response_model=RuleListResponse)
 async def list_rules():
     return rule_engine.get_rules_summary()
+
+
+@app.get("/tools/get_project_constraints", response_model=ProjectConstraintsResponse)
+async def get_project_constraints(project_id: str, drawing_id: str = "active-drawing"):
+    return _resolve_constraint_profile(project_id, drawing_id)
+
+
+@app.post("/tools/configure_project_constraints", response_model=ProjectConstraintsResponse)
+async def configure_project_constraints(request: ProjectConstraintsConfigRequest):
+    return _upsert_constraint_profile(request)
 
 
 @app.post("/validate", response_model=ValidationResponse)
@@ -659,7 +733,8 @@ async def agent_chat(request: AgentChatRequest):
         f"Latest run status: {guardrail.run_status}. "
         f"High: {guardrail.severity_counts.get('high', 0)}, "
         f"Medium: {guardrail.severity_counts.get('medium', 0)}, "
-        f"Low: {guardrail.severity_counts.get('low', 0)}."
+        f"Low: {guardrail.severity_counts.get('low', 0)}. "
+        f"Constraint profile: {guardrail.constraint_profile_name or 'not-configured'}"
     )
 
     if any(token in lowered_message for token in ["validate", "check", "re-run", "rerun"]):
@@ -697,8 +772,10 @@ async def agent_chat(request: AgentChatRequest):
 @app.post("/agent/unified-query", response_model=UnifiedAgentResponse)
 async def unified_agent_query(request: UnifiedAgentQueryRequest):
     guardrail = _build_guardrail_status(request.project_id, request.session_id)
+    constraints = _resolve_constraint_profile(request.project_id, request.drawing_id)
     executed_tools = [
         "get_active_document_context",
+        "get_project_constraints",
         "get_guardrail_status",
     ]
 
@@ -740,7 +817,8 @@ async def unified_agent_query(request: UnifiedAgentQueryRequest):
         f"Run status: {guardrail.run_status}. "
         f"High: {guardrail.severity_counts.get('high', 0)}, "
         f"Medium: {guardrail.severity_counts.get('medium', 0)}, "
-        f"Low: {guardrail.severity_counts.get('low', 0)}."
+        f"Low: {guardrail.severity_counts.get('low', 0)}. "
+        f"Constraint profile: {constraints.profile_name} ({constraints.source})."
     )
 
     answer = (

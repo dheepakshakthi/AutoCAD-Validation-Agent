@@ -18,6 +18,8 @@ namespace KeepAttributesHorizontal.Validation
         private readonly Timer _debounceTimer;
         private readonly object _lock = new object();
         private bool _pendingValidation = false;
+        private bool _isListening;
+        private Database? _attachedDatabase;
         private string _sessionId;
         private int _geometryVersion = 0;
 
@@ -59,12 +61,14 @@ namespace KeepAttributesHorizontal.Validation
         /// </summary>
         public void StartListening()
         {
-            var doc = AcadApp.DocumentManager.MdiActiveDocument;
-            if (doc == null) return;
+            if (_isListening)
+            {
+                return;
+            }
 
-            doc.Database.ObjectModified += OnObjectModified;
-            doc.Database.ObjectAppended += OnObjectAppended;
-            doc.Database.ObjectErased += OnObjectErased;
+            _isListening = true;
+            AcadApp.DocumentManager.DocumentActivated += OnDocumentActivated;
+            AttachToDocument(AcadApp.DocumentManager.MdiActiveDocument);
 
             System.Diagnostics.Debug.WriteLine($"GeometryListener started for session {_sessionId}");
         }
@@ -74,15 +78,54 @@ namespace KeepAttributesHorizontal.Validation
         /// </summary>
         public void StopListening()
         {
-            var doc = AcadApp.DocumentManager.MdiActiveDocument;
-            if (doc == null) return;
+            if (!_isListening)
+            {
+                return;
+            }
 
-            doc.Database.ObjectModified -= OnObjectModified;
-            doc.Database.ObjectAppended -= OnObjectAppended;
-            doc.Database.ObjectErased -= OnObjectErased;
+            _isListening = false;
+            AcadApp.DocumentManager.DocumentActivated -= OnDocumentActivated;
+            DetachFromCurrentDatabase();
 
             _debounceTimer.Stop();
             System.Diagnostics.Debug.WriteLine($"GeometryListener stopped for session {_sessionId}");
+        }
+
+        private void OnDocumentActivated(object? sender, DocumentCollectionEventArgs e)
+        {
+            if (!_isListening)
+            {
+                return;
+            }
+
+            AttachToDocument(e.Document);
+        }
+
+        private void AttachToDocument(Document? document)
+        {
+            DetachFromCurrentDatabase();
+            if (document == null)
+            {
+                return;
+            }
+
+            _attachedDatabase = document.Database;
+            _attachedDatabase.ObjectModified += OnObjectModified;
+            _attachedDatabase.ObjectAppended += OnObjectAppended;
+            _attachedDatabase.ObjectErased += OnObjectErased;
+        }
+
+        private void DetachFromCurrentDatabase()
+        {
+            if (_attachedDatabase == null)
+            {
+                return;
+            }
+
+            _attachedDatabase.ObjectModified -= OnObjectModified;
+            _attachedDatabase.ObjectAppended -= OnObjectAppended;
+            _attachedDatabase.ObjectErased -= OnObjectErased;
+            _attachedDatabase = null;
         }
 
         private void OnObjectModified(object sender, ObjectEventArgs e)
